@@ -83,7 +83,7 @@ def main():
     model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=7)
 
     # Tokenize the data
-    train_batch = tokenizer(train_sentences, truncation=True, padding=True)
+    train_batch = tokenizer(train_sentences, truncation=True, padding=True, return_tensors="pt")
 
 
 
