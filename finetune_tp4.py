@@ -4,6 +4,8 @@ from datasets import Dataset, DatasetDict
 import torch
 from sklearn.metrics import precision_recall_fscore_support
 import numpy as np
+import json
+import time 
 
 # Load DistilBERT tokenizer
 model_name = 'distilbert-base-uncased'  # change as needed
@@ -125,7 +127,7 @@ def raw_data_to_list_of_dict(raw_dict_train,raw_dict_test):
 
 
 def align_labels_with_tokens(examples):
-    label_list = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", ...]  # Add all labels
+    label_list = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC"]  
     label_to_id = {label: i for i, label in enumerate(label_list)}
     
     tokenized_inputs = tokenizer(examples["words"], truncation=True, padding="max_length", is_split_into_words=True)
@@ -151,78 +153,26 @@ def align_labels_with_tokens(examples):
     tokenized_inputs["labels"] = labels
     return tokenized_inputs
 
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)
+    true_labels = labels.flatten()
+    pred_labels = predictions.flatten()
 
+    precision, recall, f1, _ = precision_recall_fscore_support(true_labels, pred_labels, average=None)
 
-def compute_metrics(pred):
-    # Assuming pred.label_ids and pred.predictions are in the right format
-    labels = pred.label_ids
-    preds = np.argmax(pred.predictions, axis=2)
+    label_names = ['O', 'B-LOC', 'B-ORG', 'B-PER', 'I-LOC', 'I-ORG', 'I-PER']
 
-    # Flatten the arrays
-    labels_flat = labels.flatten()
-    preds_flat = preds.flatten()
-
-    # Filter out a special token label id if necessary (e.g., -100 used in some NER datasets)
-    active_accuracy = labels_flat != -100
-    labels_flat = labels_flat[active_accuracy]
-    preds_flat = preds_flat[active_accuracy]
-
-    # Compute metrics, adjust 'labels' parameter as needed
-    precision, recall, f1, _ = precision_recall_fscore_support(labels_flat, preds_flat, average=None, labels=[...])  # specify your label IDs here
-
-    return {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1
-    }
-
-
-def compare_to_baseline(evaluation_result, baseline_metrics, language):
-    # Extract the evaluation metrics for the specific language
-    eval_metrics = evaluation_result[language]
-
-    # Compare with the baseline
-    comparison = {}
-    for label in eval_metrics.keys():
-        comparison[label] = {
-            'precision_diff': eval_metrics['precision'][label] - baseline_metrics[language]['precision'][label],
-            'recall_diff': eval_metrics['recall'][label] - baseline_metrics[language]['recall'][label],
-            'f1_diff': eval_metrics['f1'][label] - baseline_metrics[language]['f1'][label]
+    metrics_per_label = {}
+    for i, label in enumerate(label_names):
+        print(f"Label: {label}, Type: {type(label)}")
+        metrics_per_label[label] = {
+            'precision': precision[i],
+            'recall': recall[i],
+            'f1': f1[i]
         }
 
-    return comparison
-
-
-def parse_baseline(file_content, target_language):
-    baseline_metrics = {}
-    lines = file_content.split('\n')
-    language_header = f'UNER_{target_language}'
-    parsing = False
-
-    for line in lines:
-        if line.strip() == language_header:
-            parsing = True
-            baseline_metrics[target_language] = {}
-            continue
-
-        if parsing:
-            if line.startswith('   '):  # Marks the end of the section
-                break
-            if line.strip() and not line.startswith('-'):
-                parts = line.split()
-                label = parts[0]
-                precision = float(parts[1])
-                recall = float(parts[2])
-                f1_score = float(parts[3])
-                baseline_metrics[target_language][label] = {
-                    'precision': precision,
-                    'recall': recall,
-                    'f1': f1_score
-                }
-
-    return baseline_metrics
-
-
+    return metrics_per_label
 
 
 def train_and_evaluate(model, train_dataset, test_dataset, model_name):
@@ -240,28 +190,34 @@ def train_and_evaluate(model, train_dataset, test_dataset, model_name):
         logging_steps=10,
     )
 
+
     # Initialize Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset['train'],
         eval_dataset=test_dataset['test'],
-        #compute_metrics=compute_metrics
+        tokenizer=tokenizer,
+        compute_metrics=compute_metrics
     )
 
     # Train and Evaluate
     trainer.train()
     evaluation_result = trainer.evaluate()
+    predictions = trainer.predict(test_dataset['test'])
 
     # Save the model
     model.save_pretrained(f'./{model_name}')
+    # Save the tokenizer
+    tokenizer.save_pretrained(f'./{model_name}_tokenizer')
 
-    return evaluation_result
+    return evaluation_result, predictions.metrics
 
 
 
 def main():
 
+    #'O', 'B-LOC', 'B-ORG', 'B-PER', 'I-LOC', 'I-ORG', 'I-PER'
     # For reference, the labels are:
     label2id ={
     "O": 0,
@@ -296,7 +252,7 @@ def main():
     with open('Baseline.txt', 'r') as file:
         baseline_content = file.read()
     
-    baseline_metrics = parse_baseline(baseline_content,language)
+    
 
 
 
@@ -332,23 +288,30 @@ def main():
     #model = DistilBertForTokenClassification.from_pretrained(mod, num_labels=9)
 
 
-    evaluation_result = train_and_evaluate(model, tokenized_train_data, tokenized_test_data, model_name)
-    #comparison = compare_to_baseline(evaluation_result, baseline_metrics, language)
-
-    # Write comparison to file
-    #try:
-    #    with open('compare_eval.txt', 'x') as file:
-    #        file.write(str(comparison))
-    #except FileExistsError:
-    #    with open('compare_eval.txt', 'w') as file:
-    #        file.write(str(comparison))
+    evaluation_result, prediction_results = train_and_evaluate(model, tokenized_train_data, tokenized_test_data, model_name)
+    #print("Baseline metrics: ")
+    #print(baseline_content)
+    #print("Metrics: ")
+    #print(prediction_results)
+    #print("Evaluation results: ")
+    #print(evaluation_result)
 
 
-    #print(comparison)
+    # Get the current date and time up to the minute
+    current_time = time.strftime("%m-%d_%H-%M", time.localtime())
 
 
-    print(evaluation_result)
 
+    metrics = prediction_results
+    with open(f'{(language).upper}_metrics.json', 'w') as file:
+        json.dump(metrics, file, indent=4)
+
+
+    # Save the config file
+    #config = json.load(open(f'{model_name}/config.json'))
+    #config['id2label'] = id2label
+    #config['label2id'] = label2id
+    #json.dump(config, open('config.json', 'w'))
 
 
 
