@@ -1,6 +1,6 @@
 import argparse
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-
+from transformers import AutoTokenizer, AutoModelForTokenClassification, TrainingArguments, Trainer
+import torch
 
 
 def load_data(lang):
@@ -61,6 +61,10 @@ def load_model_and_tokenizer(model_name, num_labels):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer
 
+def convert_labels_to_ids(labels, label_to_id):
+    return [[label_to_id[label] for label in sentence_labels] for sentence_labels in labels]
+
+
 def tokenize_and_align_labels(sentences, labels, tokenizer):
     tokenized_inputs = tokenizer(sentences, truncation=True, padding=True, is_split_into_words=True)
     aligned_labels = []
@@ -90,10 +94,59 @@ def tokenize_and_align_labels(sentences, labels, tokenizer):
     return tokenized_inputs
 
 
+# CHECK THIS IF NOT WORING ???
+class NERDataset(torch.utils.data.Dataset):
+    def __init__(self, tokenized_data):
+        self.tokenized_data = tokenized_data
+
+    def __len__(self):
+        return len(self.tokenized_data['input_ids'])
+
+    def __getitem__(self, idx):
+        item = {}
+        for key, val in self.tokenized_data.items():
+            # Convert to torch.tensor only if the data is numerical
+            if isinstance(val[idx], (list, torch.Tensor)):
+                item[key] = torch.tensor(val[idx])
+            else:
+                item[key] = val[idx]  # Keep the original data format if it's not numerical
+        return item
+    
+
+def train_and_evaluate(model, train_dataset, test_dataset):
+    
+    training_args = TrainingArguments(
+        output_dir="./model_output",
+        num_train_epochs=3,
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=64,
+        warmup_steps=500,
+        weight_decay=0.01,
+        logging_dir='./logs',
+        logging_steps=10,
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=test_dataset,
+    )
+
+    # Train the model
+    trainer.train()
+
+    # Evaluate the model
+    evaluation_results = trainer.evaluate()
+
+    return evaluation_results
+
+
+
+
 def main():
 
     # First parse the arguments
-    
     parser = argparse.ArgumentParser()
     parser.add_argument('language', help='Language for which to run the NER task')
     args = parser.parse_args()
@@ -116,14 +169,34 @@ def main():
     #model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
 
+    # Convert the labels to numbers
+    label_map = {label: i for i, label in enumerate(['O', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG', 'B-LOC', 'I-LOC'])}
+
+    train_tags = convert_labels_to_ids(train_tags, label_map)
+    test_tags = convert_labels_to_ids(test_tags, label_map)
+
     # Tokenize the data and align the labels
     train_tokenized = tokenize_and_align_labels(train_sentences, train_tags, tokenizer)
     test_tokenized = tokenize_and_align_labels(test_sentences, test_tags, tokenizer)
-    print("Train tokenized:")
-    print(train_tokenized[0])
+    print("Train tokenized")
+    print(train_tokenized['input_ids'][0])
+    print(train_tokenized['labels'][0])
+
+
+
+    # Creating Dataset
+    train_dataset = NERDataset(train_tokenized)
+    test_dataset = NERDataset(test_tokenized)
+
+    # Train and evaluate the model
+    evaluation_results = train_and_evaluate(model, train_dataset, test_dataset)
+
+    # Save the evaluation results
+    save_file = f"results/{language}_results.txt"
+    with open(save_file, 'w') as f:
+        f.write(str(evaluation_results))
     
-
-
+    print(evaluation_results)
 
 
 if __name__ == '__main__':

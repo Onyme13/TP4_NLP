@@ -253,7 +253,7 @@ def main():
     # Transform the data into a dictionary
     train_dict, test_dict = transform_to_dict(train_sentences, train_tags, test_sentences, test_tags, label2id)
 
-    # Transform the dictionary into a list of dictionariesssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMqXrquTlkttdgsbkhVWDrAcI/TbQxwDgFKcc8xLrDAC jocorl@hotmail.com
+    # Transform the dictionary into a list of dictionaries
 
     train_list, test_list = raw_data_to_list_of_dict(train_dict, test_dict)
 
