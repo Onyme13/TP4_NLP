@@ -25,8 +25,9 @@ def load_data(lang):
     print("Language not found")
     pass
 
-def iob2_to_senteces(file_path):
+def iob2_to_sentences(file_path):
     sentences = []
+    tags = []
     current_sentence_words = []
     current_sentence_tags = []
     full_sentences = [] # For a list of sentences 
@@ -34,31 +35,59 @@ def iob2_to_senteces(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         for line in file:
             line = line.strip()
-            
-            # Capture full sentence from metadata
-            if line.startswith("# text ="):
-                full_sentence = line.split("= ")[1]
-                full_sentences.append(full_sentence)
+
+            if line.startswith('#'):
                 continue
 
-            # Check for the end of a sentence
-            if not line:
-                if current_sentence_words:
-                    sentences.append((current_sentence_words, current_sentence_tags))
-                    current_sentence_words = []
-                    current_sentence_tags = []
+            parts = line.split('\t')
+
+            if len(parts) > 2:
+                current_sentence_words.append(parts[1])
+                current_sentence_tags.append(parts[2])
             else:
-                parts = line.split('\t')
-                if len(parts) > 2:
-                    word, tag = parts[1], parts[3]  
-                    current_sentence_words.append(word)
-                    current_sentence_tags.append(tag)
+                if current_sentence_words:
+                    sentences.append(current_sentence_words)
+                    tags.append(current_sentence_tags)
+                    #full_sentences.append(current_sentence_words)
+                current_sentence_words = []
+                current_sentence_tags = []
 
-        # Add the last sentence if the file doesn't end with a newline
-        if current_sentence_words:
-            sentences.append((current_sentence_words, current_sentence_tags))
+    return sentences, tags        
 
-    return full_sentences
+
+#FOR LATER USE
+def load_model_and_tokenizer(model_name, num_labels):
+    model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    return model, tokenizer
+
+def tokenize_and_align_labels(sentences, labels, tokenizer):
+    tokenized_inputs = tokenizer(sentences, truncation=True, padding=True, is_split_into_words=True)
+    aligned_labels = []
+
+    for i, label_list in enumerate(labels):
+        word_ids = tokenized_inputs.word_ids(batch_index=i)  # Maps each token to word in the original sentence
+        previous_word_idx = None
+        label_ids = []
+
+        for word_idx in word_ids:
+            # Special tokens have a word id of None. We set the label to -100 so they are automatically
+            # ignored in the loss function.
+            if word_idx is None:
+                label_ids.append(-100)
+            # We set the label for the first token of each word.
+            elif word_idx != previous_word_idx:
+                label_ids.append(label_list[word_idx])
+            # For the other tokens in a word, we set the label to -100.
+            else:
+                label_ids.append(-100)
+
+            previous_word_idx = word_idx
+        
+        aligned_labels.append(label_ids)
+
+    tokenized_inputs["labels"] = aligned_labels
+    return tokenized_inputs
 
 
 def main():
@@ -75,8 +104,8 @@ def main():
     train_file, test_file = load_data(language)
 
     # Process the data
-    train_sentences = iob2_to_senteces(train_file)
-    test_sentences = iob2_to_senteces(test_file)
+    train_sentences, train_tags = iob2_to_sentences(train_file) 
+    test_sentences, test_tags = iob2_to_sentences(test_file) 
 
     # Load the model
     tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
@@ -87,10 +116,13 @@ def main():
     #model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
 
-    # Tokenize the data
-    train_batch = tokenizer(train_sentences, truncation=True, max_length=512, padding=True, return_tensors="pt")
-
+    # Tokenize the data and align the labels
+    train_tokenized = tokenize_and_align_labels(train_sentences, train_tags, tokenizer)
+    test_tokenized = tokenize_and_align_labels(test_sentences, test_tags, tokenizer)
+    print("Train tokenized:")
+    print(train_tokenized[0])
     
+
 
 
 
