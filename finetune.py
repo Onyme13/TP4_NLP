@@ -208,6 +208,7 @@ def main():
     # Generate the classification report
     report = classification_report(true_labels_flat, predicted_labels_flat)
 
+    print("Classification report:")
     print(report)
 
 
@@ -217,8 +218,8 @@ def main():
     with open(save_file, 'w') as f:
         f.write(str(report)) #f.write(str(evaluation_results))
 
-    
-    #print(evaluation_results)
+    print("Evaluation results:")
+    print(evaluation_results)
 
 
 if __name__ == '__main__':
