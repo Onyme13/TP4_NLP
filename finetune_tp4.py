@@ -5,11 +5,12 @@ import torch
 from sklearn.metrics import precision_recall_fscore_support
 import numpy as np
 import json
-import time 
+import os
 
 # Load DistilBERT tokenizer
 model_name = 'distilbert-base-uncased'  # change as needed
 tokenizer = DistilBertTokenizerFast.from_pretrained(model_name)
+#tokenizer = DistilBertTokenizerFast.from_pretrained('models/distilbert-base-uncased_tokenizer')
 
 
 
@@ -46,7 +47,6 @@ def process_iob2_file(file_path):
     return sentences, sentence_tags
 
 # Process the train and test files
-
 def load_data(lang):
     data = [
         ('Chinese-GSDSIMP', 'bert-base-chinese', 'zh_gsdsimp-ud-train.iob2', 'zh_gsdsimp-ud-test.iob2'),
@@ -127,7 +127,7 @@ def raw_data_to_list_of_dict(raw_dict_train,raw_dict_test):
 
 
 def align_labels_with_tokens(examples):
-    label_list = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC"]  
+    label_list = ['O', 'B-LOC', 'B-ORG', 'B-PER', 'I-LOC', 'I-ORG', 'I-PER']  
     label_to_id = {label: i for i, label in enumerate(label_list)}
     
     tokenized_inputs = tokenizer(examples["words"], truncation=True, padding="max_length", is_split_into_words=True)
@@ -159,7 +159,7 @@ def compute_metrics(eval_pred):
     true_labels = labels.flatten()
     pred_labels = predictions.flatten()
 
-    precision, recall, f1, _ = precision_recall_fscore_support(true_labels, pred_labels, average=None)
+    precision, recall, f1, _ = precision_recall_fscore_support(true_labels, pred_labels, average=None, zero_division=1)
 
     label_names = ['O', 'B-LOC', 'B-ORG', 'B-PER', 'I-LOC', 'I-ORG', 'I-PER']
 
@@ -206,10 +206,11 @@ def train_and_evaluate(model, train_dataset, test_dataset, model_name):
     evaluation_result = trainer.evaluate()
     predictions = trainer.predict(test_dataset['test'])
 
+    save_directory = f"models"
     # Save the model
-    model.save_pretrained(f'./{model_name}')
+    model.save_pretrained(f'{save_directory}/{model_name}')
     # Save the tokenizer
-    tokenizer.save_pretrained(f'./{model_name}_tokenizer')
+    tokenizer.save_pretrained(f'{save_directory}/{model_name}_tokenizer')
 
     return evaluation_result, predictions.metrics
 
@@ -233,9 +234,6 @@ def main():
     
 
 
-
-
-
     def tokenize_function(data):
         return tokenizer(data["words"], truncation=True, padding="max_length", is_split_into_words=True)
 
@@ -248,14 +246,7 @@ def main():
     print(f'Running NER for language: {language}')
 
 
-    # Load baseline metrics
-    with open('Baseline.txt', 'r') as file:
-        baseline_content = file.read()
     
-    
-
-
-
 
     mod, train_sentences, train_tags, test_sentences, test_tags = load_data(args.language)
 
@@ -285,7 +276,7 @@ def main():
 
     # Load DistilBERT model
     model = DistilBertForTokenClassification.from_pretrained(model_name, num_labels=7)
-    #model = DistilBertForTokenClassification.from_pretrained(mod, num_labels=9)
+    #model = DistilBertForTokenClassification.from_pretrained('models/distilbert-base-uncased', num_labels=7)
 
 
     evaluation_result, prediction_results = train_and_evaluate(model, tokenized_train_data, tokenized_test_data, model_name)
@@ -297,13 +288,12 @@ def main():
     #print(evaluation_result)
 
 
-    # Get the current date and time up to the minute
-    current_time = time.strftime("%m-%d_%H-%M", time.localtime())
-
-
+    # Save the metrics
+    if not os.path.exists('metrics'):
+        os.makedirs('metrics')
 
     metrics = prediction_results
-    with open(f'{(language).upper}_metrics.json', 'w') as file:
+    with open(f'metrics/{language}_metrics.json', 'w') as file:
         json.dump(metrics, file, indent=4)
 
 

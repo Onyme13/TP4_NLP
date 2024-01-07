@@ -82,9 +82,15 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
     model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=7)
 
-    # Tokenize the data
-    train_batch = tokenizer(train_sentences, truncation=True, padding=True, return_tensors="pt")
+    # Save the model
+    save_directory = f"models/{language}"
+    #model.save_pretrained(save_directory)
+    #tokenizer.save_pretrained(save_directory)
 
+    # Tokenize the data
+    train_batch = tokenizer(train_sentences, truncation=True, max_length=512, padding=True, return_tensors="pt")
+
+    
 
 
 
