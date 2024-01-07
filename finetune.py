@@ -1,7 +1,8 @@
 import argparse
 from transformers import AutoTokenizer, AutoModelForTokenClassification, TrainingArguments, Trainer
 import torch
-
+import numpy as np
+from seqeval.metrics import classification_report
 
 def load_data(lang):
     data = [
@@ -139,13 +140,19 @@ def train_and_evaluate(model, train_dataset, test_dataset):
     # Evaluate the model
     evaluation_results = trainer.evaluate()
 
-    return evaluation_results
+    # Generate predictions
+    predictions, label_ids, metrics = trainer.predict(test_dataset)
+
+    return evaluation_results, predictions, label_ids, metrics
 
 
 
 
 def main():
 
+    LABEL_MAP = {label: i for i, label in enumerate(['O', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG', 'B-LOC', 'I-LOC'])}
+    
+    
     # First parse the arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('language', help='Language for which to run the NER task')
@@ -162,7 +169,7 @@ def main():
 
     # Load the model
     tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
-    model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=7)
+    model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=len(LABEL_MAP))
 
     # Save the model
     save_directory = f"models/{language}"
@@ -170,33 +177,48 @@ def main():
     #tokenizer.save_pretrained(save_directory)
 
     # Convert the labels to numbers
-    label_map = {label: i for i, label in enumerate(['O', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG', 'B-LOC', 'I-LOC'])}
 
-    train_tags = convert_labels_to_ids(train_tags, label_map)
-    test_tags = convert_labels_to_ids(test_tags, label_map)
+    train_tags = convert_labels_to_ids(train_tags, LABEL_MAP)
+    test_tags = convert_labels_to_ids(test_tags, LABEL_MAP)
 
     # Tokenize the data and align the labels
     train_tokenized = tokenize_and_align_labels(train_sentences, train_tags, tokenizer)
     test_tokenized = tokenize_and_align_labels(test_sentences, test_tags, tokenizer)
-    print("Train tokenized")
-    print(train_tokenized['input_ids'][0])
-    print(train_tokenized['labels'][0])
-
-
 
     # Creating Dataset
     train_dataset = NERDataset(train_tokenized)
     test_dataset = NERDataset(test_tokenized)
 
     # Train and evaluate the model
-    evaluation_results = train_and_evaluate(model, train_dataset, test_dataset)
+    evaluation_results, predictions, labels = train_and_evaluate(model, train_dataset, test_dataset)
+
+    ########################################
+
+    def logits_to_labels(logits, id_to_label):
+        return [id_to_label[id] for id in np.argmax(logits, axis=2)[0]]
+
+    # Convert predictions
+    id_to_label = {v: k for k, v in LABEL_MAP.items()}
+    predicted_labels = [logits_to_labels(p, id_to_label) for p in predictions]
+
+    # Flatten the lists
+    true_labels_flat = [label for sentence in labels for label in sentence]
+    predicted_labels_flat = [label for sentence in predicted_labels for label in sentence]
+
+    # Generate the classification report
+    report = classification_report(true_labels_flat, predicted_labels_flat)
+
+    print(report)
+
+
 
     # Save the evaluation results
     save_file = f"results/{language}_results.txt"
     with open(save_file, 'w') as f:
-        f.write(str(evaluation_results))
+        f.write(str(report)) #f.write(str(evaluation_results))
+
     
-    print(evaluation_results)
+    #print(evaluation_results)
 
 
 if __name__ == '__main__':
