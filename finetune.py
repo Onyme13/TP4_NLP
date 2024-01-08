@@ -3,7 +3,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainin
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-from seqeval.metrics import classification_report
+from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 
 def load_data(lang):
@@ -165,21 +165,29 @@ def train_model(model, train_dataset, test_dataset):
 
 
 def evaluate_model(predictions, labels, test_dataset, id2label):
-
     # Convert logits to label IDs
     predictions = np.argmax(predictions, axis=2)
 
-    # Process predictions and true labels to remove padding
-    true_labels = []
-    pred_labels = []
+    # Flatten the predictions and true labels
+    flat_true_labels = []
+    flat_predictions = []
 
     for i in range(len(labels)):
-        # Remove ignored index (special tokens)
-        true_labels.append([id2label[l] for (p, l) in zip(predictions[i], labels[i]) if l != -100])
-        pred_labels.append([id2label[p] for (p, l) in zip(predictions[i], labels[i]) if l != -100])
+        # Filter out '-100' used for special tokens and padding
+        label_seq = [l for l in labels[i] if l != -100]
+        pred_seq = [predictions[i][j] for j, l in enumerate(labels[i]) if l != -100]
 
+        # Extend the flat list
+        flat_true_labels.extend(label_seq)
+        flat_predictions.extend(pred_seq)
+
+    # Convert label IDs to label names
+    flat_true_labels = [id2label[label_id] for label_id in flat_true_labels]
+    flat_pred_labels = [id2label[pred_id] for pred_id in flat_predictions]
+
+    tag_names =  ['O', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG', 'B-LOC', 'I-LOC']
     # Generate classification report
-    report = classification_report(true_labels, pred_labels)
+    report = classification_report(flat_true_labels, flat_pred_labels, target_names=tag_names, zero_division=1)
     return report
 
 
@@ -212,14 +220,10 @@ def main():
 
 
 
-
     # Save the model
     save_directory = f"models/{language}"
     #model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
-
-
-
 
 
     # Tokenize the data and align the labels
@@ -243,8 +247,6 @@ def main():
 
     # Create PyTorch DataLoader
 
-    # Define batch size
-    batch_size = 16  # You can adjust this depending on your GPU memory
 
     # Create DataLoaders for our training and validation sets
     #train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -253,12 +255,11 @@ def main():
     # Train and evaluate the model
     evaluation_results, predictions, labels = train_model(model, train_dataset, test_dataset)
 
+
+
     # Generate report
     report = evaluate_model(predictions, labels, test_dataset, id2label)
 
-    ########################################
-    
-    ########################################
 
 
     # Save the evaluation results
