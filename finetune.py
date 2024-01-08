@@ -1,8 +1,10 @@
 import argparse
 from transformers import AutoTokenizer, AutoModelForTokenClassification, TrainingArguments, Trainer
 import torch
+from torch.utils.data import Dataset
 import numpy as np
 from seqeval.metrics import classification_report
+from torch.utils.data import DataLoader
 
 def load_data(lang):
     data = [
@@ -76,49 +78,63 @@ def tokenize_and_align_labels(sentences, labels, tokenizer):
         label_ids = []
 
         for word_idx in word_ids:
-            # Special tokens have a word id of None. We set the label to -100 so they are automatically
-            # ignored in the loss function.
+            # Special tokens have a word id of None. We set the label to -100 so they are automatically ignored in the loss function.
             if word_idx is None:
                 label_ids.append(-100)
             # We set the label for the first token of each word.
             elif word_idx != previous_word_idx:
                 label_ids.append(label_list[word_idx])
-            # For the other tokens in a word, we set the label to -100.
+            # For the other tokens in a word, if the word is a part of an entity, we continue the entity label
             else:
-                label_ids.append(-100)
+                if label_list[word_idx].startswith("B-"):
+                    label_ids.append("I" + label_list[word_idx][1:])
+                else:
+                    label_ids.append(label_list[word_idx])
 
             previous_word_idx = word_idx
-        
+
         aligned_labels.append(label_ids)
 
     tokenized_inputs["labels"] = aligned_labels
     return tokenized_inputs
 
 
+def convert_labels_to_ids(labels, label2id):
+    converted_labels = []
+    for label_list in labels:
+        converted_label_list = []
+        for label in label_list:
+            if label == -100:
+                # Keep -100 as it is
+                converted_label_list.append(-100)
+            else:
+                # Convert string labels to their corresponding integer IDs
+                converted_label_list.append(label2id[label])
+        converted_labels.append(converted_label_list)
+    return converted_labels
+
+
+
 # CHECK THIS IF NOT WORING ???
-class NERDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenized_data):
-        self.tokenized_data = tokenized_data
+class NERDataset(Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings  # Encodings are your tokenized input ids
+        self.labels = labels  # Labels are the integer labels for each token
 
     def __len__(self):
-        return len(self.tokenized_data['input_ids'])
+        return len(self.encodings["input_ids"])
 
     def __getitem__(self, idx):
-        item = {}
-        for key, val in self.tokenized_data.items():
-            # Convert to torch.tensor only if the data is numerical
-            if isinstance(val[idx], (list, torch.Tensor)):
-                item[key] = torch.tensor(val[idx])
-            else:
-                item[key] = val[idx]  # Keep the original data format if it's not numerical
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item["labels"] = torch.tensor(self.labels[idx])
         return item
-    
 
-def train_and_evaluate(model, train_dataset, test_dataset):
+
+def train_model(model, train_dataset, test_dataset):
     
     training_args = TrainingArguments(
         output_dir="./model_output",
-        num_train_epochs=3,
+        num_train_epochs=1,
         per_device_train_batch_size=16,
         per_device_eval_batch_size=64,
         warmup_steps=500,
@@ -141,18 +157,41 @@ def train_and_evaluate(model, train_dataset, test_dataset):
     evaluation_results = trainer.evaluate()
 
     # Generate predictions
-    predictions, label_ids, metrics = trainer.predict(test_dataset)
+    predictions, label_ids, _ = trainer.predict(test_dataset)
 
-    return evaluation_results, predictions, label_ids, metrics
+    return evaluation_results, predictions, label_ids
+
+
+
+
+def evaluate_model(predictions, labels, test_dataset, id2label):
+
+    # Convert logits to label IDs
+    predictions = np.argmax(predictions, axis=2)
+
+    # Process predictions and true labels to remove padding
+    true_labels = []
+    pred_labels = []
+
+    for i in range(len(labels)):
+        # Remove ignored index (special tokens)
+        true_labels.append([id2label[l] for (p, l) in zip(predictions[i], labels[i]) if l != -100])
+        pred_labels.append([id2label[p] for (p, l) in zip(predictions[i], labels[i]) if l != -100])
+
+    # Generate classification report
+    report = classification_report(true_labels, pred_labels)
+    return report
+
 
 
 
 
 def main():
 
-    LABEL_MAP = {label: i for i, label in enumerate(['O', 'B-PER', 'I-PER', 'B-ORG', 'I-ORG', 'B-LOC', 'I-LOC'])}
-    
-    
+    label2id = {'O': 0, 'B-PER': 1, 'I-PER': 2, 'B-ORG': 3, 'I-ORG': 4, 'B-LOC': 5, 'I-LOC': 6}
+    id2label = {0: 'O', 1: 'B-PER', 2: 'I-PER', 3: 'B-ORG', 4: 'I-ORG', 5: 'B-LOC', 6: 'I-LOC'}
+
+
     # First parse the arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('language', help='Language for which to run the NER task')
@@ -169,54 +208,70 @@ def main():
 
     # Load the model
     tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
-    model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=len(LABEL_MAP))
+    model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=len(label2id))
+
+
+
 
     # Save the model
     save_directory = f"models/{language}"
     #model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
 
-    # Convert the labels to numbers
 
-    train_tags = convert_labels_to_ids(train_tags, LABEL_MAP)
-    test_tags = convert_labels_to_ids(test_tags, LABEL_MAP)
+
+
 
     # Tokenize the data and align the labels
     train_tokenized = tokenize_and_align_labels(train_sentences, train_tags, tokenizer)
     test_tokenized = tokenize_and_align_labels(test_sentences, test_tags, tokenizer)
 
+
+
+    # Convert the labels to ids
+
+    train_tokenized['labels'] = convert_labels_to_ids(train_tokenized['labels'], label2id)
+    test_tokenized['labels'] = convert_labels_to_ids(test_tokenized['labels'], label2id)
+
+
+
     # Creating Dataset
-    train_dataset = NERDataset(train_tokenized)
-    test_dataset = NERDataset(test_tokenized)
+    train_dataset = NERDataset(train_tokenized, train_tokenized['labels'])
+    test_dataset = NERDataset(test_tokenized, test_tokenized['labels'])
+
+ 
+
+    # Create PyTorch DataLoader
+
+    # Define batch size
+    batch_size = 16  # You can adjust this depending on your GPU memory
+
+    # Create DataLoaders for our training and validation sets
+    #train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    #test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # Train and evaluate the model
-    evaluation_results, predictions, labels = train_and_evaluate(model, train_dataset, test_dataset)
+    evaluation_results, predictions, labels = train_model(model, train_dataset, test_dataset)
+
+    # Generate report
+    report = evaluate_model(predictions, labels, test_dataset, id2label)
 
     ########################################
-
-    def logits_to_labels(logits, id_to_label):
-        return [id_to_label[id] for id in np.argmax(logits, axis=2)[0]]
-
-    # Convert predictions
-    id_to_label = {v: k for k, v in LABEL_MAP.items()}
-    predicted_labels = [logits_to_labels(p, id_to_label) for p in predictions]
-
-    # Flatten the lists
-    true_labels_flat = [label for sentence in labels for label in sentence]
-    predicted_labels_flat = [label for sentence in predicted_labels for label in sentence]
-
-    # Generate the classification report
-    report = classification_report(true_labels_flat, predicted_labels_flat)
-
-    print("Classification report:")
-    print(report)
-
+    
+    ########################################
 
 
     # Save the evaluation results
     save_file = f"results/{language}_results.txt"
     with open(save_file, 'w') as f:
-        f.write(str(report)) #f.write(str(evaluation_results))
+        f.write("Evaluation results:\n")
+        f.write(str(evaluation_results))
+        f.write("\n\n")
+        f.write("Classification report:\n")
+        f.write(report)
+        
+
+
 
     print("Evaluation results:")
     print(evaluation_results)
