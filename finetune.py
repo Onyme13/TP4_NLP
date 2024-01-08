@@ -5,6 +5,9 @@ from torch.utils.data import Dataset
 import numpy as np
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
+from load_models import load_models
+import os
+from compare import compare_to_baseline
 
 def load_data(lang):
     data = [
@@ -20,10 +23,12 @@ def load_data(lang):
     # Load dataset
     for language in data:
         if lang in language[0]:
+            language_name = language[0]
+            model_name = language[1]
             train_file = f"data/UNER_{language[0]}/{language[2]}"
             test_file = f"data/UNER_{language[0]}/{language[3]}"
             dev_file = f"data/UNER_{language[0]}/{language[4]}"
-            return  train_file, test_file
+            return language_name, model_name, train_file, test_file
 
     print("Language not found")
     pass
@@ -58,7 +63,6 @@ def iob2_to_sentences(file_path):
     return sentences, tags        
 
 
-#FOR LATER USE
 def load_model_and_tokenizer(model_name, num_labels):
     model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_labels)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -115,7 +119,6 @@ def convert_labels_to_ids(labels, label2id):
 
 
 
-# CHECK THIS IF NOT WORING ???
 class NERDataset(Dataset):
     def __init__(self, encodings, labels):
         self.encodings = encodings  # Encodings are your tokenized input ids
@@ -131,12 +134,14 @@ class NERDataset(Dataset):
 
 
 def train_model(model, train_dataset, test_dataset):
-    
+
+    # For AMD GPU 6800xt:
+
     training_args = TrainingArguments(
         output_dir="./model_output",
-        num_train_epochs=1,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=64,
+        num_train_epochs=5,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=128, 
         warmup_steps=500,
         weight_decay=0.01,
         logging_dir='./logs',
@@ -199,6 +204,8 @@ def main():
     label2id = {'O': 0, 'B-PER': 1, 'I-PER': 2, 'B-ORG': 3, 'I-ORG': 4, 'B-LOC': 5, 'I-LOC': 6}
     id2label = {0: 'O', 1: 'B-PER', 2: 'I-PER', 3: 'B-ORG', 4: 'I-ORG', 5: 'B-LOC', 6: 'I-LOC'}
 
+    # Preload the models if needed or wanted
+    #load_models()
 
     # First parse the arguments
     parser = argparse.ArgumentParser()
@@ -208,19 +215,19 @@ def main():
     print(f'Running NER for language: {language}')
 
     # Load the data
-    train_file, test_file = load_data(language)
+    language_name, model_name, train_file, test_file = load_data(language)
 
     # Process the data
     train_sentences, train_tags = iob2_to_sentences(train_file) 
     test_sentences, test_tags = iob2_to_sentences(test_file) 
 
     # Load the model
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
-    model = AutoModelForTokenClassification.from_pretrained("bert-base-multilingual-uncased", num_labels=len(label2id))
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=len(label2id))
 
 
 
-    # Save the model
+    # Save the model if needed
     save_directory = f"models/{language}"
     #model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
@@ -233,7 +240,6 @@ def main():
 
 
     # Convert the labels to ids
-
     train_tokenized['labels'] = convert_labels_to_ids(train_tokenized['labels'], label2id)
     test_tokenized['labels'] = convert_labels_to_ids(test_tokenized['labels'], label2id)
 
@@ -243,19 +249,8 @@ def main():
     train_dataset = NERDataset(train_tokenized, train_tokenized['labels'])
     test_dataset = NERDataset(test_tokenized, test_tokenized['labels'])
 
- 
-
-    # Create PyTorch DataLoader
-
-
-    # Create DataLoaders for our training and validation sets
-    #train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    #test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
     # Train and evaluate the model
     evaluation_results, predictions, labels = train_model(model, train_dataset, test_dataset)
-
-
 
     # Generate report
     report = evaluate_model(predictions, labels, test_dataset, id2label)
@@ -263,16 +258,15 @@ def main():
 
 
     # Save the evaluation results
-    save_file = f"results/{language}_results.txt"
+    save_file = f"results/{language_name}_results.txt"
     with open(save_file, 'w') as f:
-        f.write("Evaluation results:\n")
-        f.write(str(evaluation_results))
-        f.write("\n\n")
-        f.write("Classification report:\n")
+        f.write(f"UNER_{language_name}\n")
+        f.write("---------------------------------------------------------\n")
         f.write(report)
-        
 
 
+    # Compare to baseline
+    compare_to_baseline(language)
 
     print("Evaluation results:")
     print(evaluation_results)
