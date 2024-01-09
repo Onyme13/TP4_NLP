@@ -1,0 +1,78 @@
+UNER_English-EWT ------ bert-base-uncased
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		-0.05		0.35		0.2
+I-ORG		0.14		0.13		0.13
+B-LOC		0.14		0.23		0.19
+I-LOC		0.53		0.53		0.53
+B-PER		-0.07		-0.06		-0.07
+I-PER		0.12		0.16		0.14
+macro		0.14		0.23		0.2
+weighted		0.22		0.36		0.3
+
+UNER_Chinese-GSDSIMP ------ bert-base-chinese
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		0.02		0.36		0.23
+I-ORG		0.1		0.1		0.1
+B-LOC		0.08		0.26		0.18
+I-LOC		0.15		0.29		0.23
+B-PER		0.0		0.11		0.07
+I-PER		0.12		0.27		0.2
+macro		0.08		0.24		0.18
+weighted		0.19		0.36		0.29
+
+UNER_Portuguese-Bosque ------ neuralmind/bert-base-portuguese-cased
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		-0.11		0.13		0.02
+I-ORG		-0.02		0.01		0.0
+B-LOC		0.13		0.16		0.15
+I-LOC		0.32		0.32		0.32
+B-PER		-0.05		-0.14		-0.1
+I-PER		0.06		0.04		0.05
+macro		0.06		0.1		0.08
+weighted		0.18		0.25		0.22
+
+UNER_Swedish-Talbanken ------ KB/bert-base-swedish-cased
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		0.02		0.36		0.23
+I-ORG		0.1		0.1		0.1
+B-LOC		0.08		0.26		0.18
+I-LOC		0.15		0.29		0.23
+B-PER		0.0		0.11		0.07
+I-PER		0.12		0.27		0.2
+macro		0.08		0.24		0.18
+weighted		0.19		0.36		0.29
+
+UNER_Slovak-SNK ------ bert-base-multilingual-uncased
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		0.35		0.73		0.66
+I-ORG		0.32		0.52		0.54
+B-LOC		0.13		0.37		0.27
+I-LOC		0.55		0.9		0.84
+B-PER		0.05		0.0		0.02
+I-PER		0.07		0.18		0.13
+macro		0.25		0.46		0.42
+weighted		0.25		0.4		0.35
+
+UNER_Danish-DDT ------ Maltehb/danish-bert-botxo
+---------------------------------------------------------
+		precision		recall		f1-score
+
+B-ORG		-0.1		0.3		0.14
+I-ORG		-0.1		0.02		-0.02
+B-LOC		0.22		0.17		0.2
+I-LOC		0.99		0.99		0.99
+B-PER		-0.02		-0.13		-0.09
+I-PER		0.06		0.0		0.04
+macro		0.18		0.24		0.22
+weighted		0.17		0.26		0.23
+

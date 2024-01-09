@@ -84,7 +84,6 @@ weighted avg       0.73      0.58      0.63      1387
 
 UNER_Croatian-SET
 ---------------------------------------------------------
-
             precision    recall  f1-score   support
 
        B-ORG       0.80      0.74      0.77       414
@@ -119,7 +118,6 @@ weighted avg       0.76      0.62      0.68      1679
 
 UNER_Danish-DDT
 ---------------------------------------------------------
-
               precision    recall  f1-score   support
 
        B-ORG       0.83      0.49      0.62       172

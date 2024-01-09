@@ -229,7 +229,7 @@ def main():
 
     # Save the model if needed
     save_directory = f"models/{language}"
-    #model.save_pretrained(save_directory)
+    model.save_pretrained(save_directory)
     #tokenizer.save_pretrained(save_directory)
 
 
