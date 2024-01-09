@@ -18,6 +18,7 @@ def compare_to_baseline(lang):
     for language in data:
         if lang in language[0]:
             language_name = language[0]
+            model_name = language[1]
     # Get the baseline of the language
     baseline = {}
     language_found = False
@@ -67,7 +68,7 @@ def compare_to_baseline(lang):
 
     # Write the results to a file
     with open(f"compare_eval.txt", "a", encoding="utf-8") as f:
-        f.write(f"UNER_{language_name}\n")
+        f.write(f"UNER_{language_name} ------ {model_name}\n")
         f.write("---------------------------------------------------------\n")
         f.write("\t\tprecision\t\trecall\t\tf1-score\n")
         f.write("\n")
